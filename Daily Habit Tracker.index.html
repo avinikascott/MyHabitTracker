@@ -1,0 +1,412 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 import \{ useState, useEffect, useRef \} from "react";\
+import \{ BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell \} from "recharts";\
+\
+const DEFAULT_HABITS = [\
+  \{ id: "1", name: "Consume Vital Proteins", completions: [], archived: false \},\
+  \{ id: "2", name: "Consume Vitamins", completions: [], archived: false \},\
+  \{ id: "3", name: "PT Exercises", completions: [], archived: false \},\
+  \{ id: "4", name: "Posture Exercises", completions: [], archived: false \},\
+];\
+\
+const HABIT_COLORS = ["#f59e0b","#6366f1","#22c55e","#ef4444","#3b82f6","#ec4899","#8b5cf6","#14b8a6"];\
+\
+const todayStr = () => new Date().toISOString().split("T")[0];\
+const dateKey = (y, m, d) => `$\{y\}-$\{String(m+1).padStart(2,"0")\}-$\{String(d).padStart(2,"0")\}`;\
+\
+const getWeekDays = () => \{\
+  const today = new Date(todayStr() + "T00:00:00");\
+  const sunday = new Date(today);\
+  sunday.setDate(today.getDate() - today.getDay());\
+  return Array.from(\{ length: 7 \}, (_, i) => \{\
+    const d = new Date(sunday);\
+    d.setDate(sunday.getDate() + i);\
+    return d.toISOString().split("T")[0];\
+  \});\
+\};\
+\
+const dayName = (dateStr) => ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(dateStr + "T00:00:00").getDay()];\
+\
+const fmt = (dateStr) => \{\
+  const d = new Date(dateStr + "T00:00:00");\
+  return `$\{d.getMonth()+1\}/$\{d.getDate()\}`;\
+\};\
+\
+const CustomTooltip = (\{ active, payload, label \}) => \{\
+  if (active && payload?.length) return (\
+    <div style=\{\{ background:"#1f2937",color:"#fff",padding:"6px 12px",borderRadius:8,fontSize:12 \}\}>\
+      <div>\{label\}</div>\
+      <div style=\{\{ color: payload[0].value ? "#4ade80" : "#9ca3af" \}\}>\
+        \{payload[0].value ? "\uc0\u10003  Completed" : "Not done"\}\
+      </div>\
+    </div>\
+  );\
+  return null;\
+\};\
+\
+function KebabMenu(\{ onRename, onArchive, onUnarchive, onDelete, isArchived \}) \{\
+  const [open, setOpen] = useState(false);\
+  const ref = useRef();\
+  useEffect(() => \{\
+    const h = (e) => \{ if (ref.current && !ref.current.contains(e.target)) setOpen(false); \};\
+    document.addEventListener("mousedown", h);\
+    return () => document.removeEventListener("mousedown", h);\
+  \}, []);\
+  const item = (label, color, onClick) => (\
+    <button onClick=\{() => \{ onClick(); setOpen(false); \}\} style=\{\{ display:"block",width:"100%",textAlign:"left",padding:"9px 16px",background:"none",border:"none",cursor:"pointer",fontSize:14,color:color||"#374151",fontWeight:500,borderRadius:6 \}\}\
+      onMouseEnter=\{e=>e.currentTarget.style.background="#f3f4f6"\}\
+      onMouseLeave=\{e=>e.currentTarget.style.background="none"\}>\
+      \{label\}\
+    </button>\
+  );\
+  return (\
+    <div ref=\{ref\} style=\{\{ position:"relative" \}\}>\
+      <button onClick=\{() => setOpen(v=>!v)\} style=\{\{ background:open?"#f3f4f6":"none",border:"none",cursor:"pointer",borderRadius:7,padding:"5px 8px",fontSize:18,color:"#9ca3af",lineHeight:1,fontWeight:700,letterSpacing:1 \}\}>\'b7\'b7\'b7</button>\
+      \{open && (\
+        <div style=\{\{ position:"absolute",right:0,top:"calc(100% + 4px)",zIndex:100,background:"#fff",borderRadius:10,boxShadow:"0 4px 20px rgba(0,0,0,0.13)",border:"1px solid #f0f0f0",minWidth:160,padding:"4px" \}\}>\
+          \{!isArchived && item("\uc0\u9999 \u65039   Rename","#374151",onRename)\}\
+          \{isArchived ? item("\uc0\u8617   Restore","#16a34a",onUnarchive) : item("\u55357 \u56772 \u65039   Archive","#6b7280",onArchive)\}\
+          \{item("\uc0\u55357 \u56785 \u65039   Delete","#ef4444",onDelete)\}\
+        </div>\
+      )\}\
+    </div>\
+  );\
+\}\
+\
+// --- Calendar View ---\
+function CalendarView(\{ habits \}) \{\
+  const now = new Date();\
+  const [viewYear, setViewYear] = useState(now.getFullYear());\
+  const [viewMonth, setViewMonth] = useState(now.getMonth());\
+  const activeHabits = habits.filter(h => !h.archived);\
+  const total = activeHabits.length;\
+\
+  const prevMonth = () => \{ if (viewMonth===0)\{setViewYear(y=>y-1);setViewMonth(11);\}else setViewMonth(m=>m-1); \};\
+  const nextMonth = () => \{ if (viewMonth===11)\{setViewYear(y=>y+1);setViewMonth(0);\}else setViewMonth(m=>m+1); \};\
+\
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();\
+  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();\
+  const today = todayStr();\
+  const monthName = new Date(viewYear, viewMonth, 1).toLocaleString("en-US",\{month:"long",year:"numeric"\});\
+\
+  const completedFor = (dk) => activeHabits.filter(h => h.completions.includes(dk));\
+\
+  const StarDots = (\{ completed, perfect \}) => \{\
+    if (perfect) return (\
+      <div style=\{\{ display:"flex",alignItems:"center",justifyContent:"center",flex:1 \}\}>\
+        <span className="shooting-star">\uc0\u55356 \u57120 </span>\
+      </div>\
+    );\
+    if (!completed.length) return <span style=\{\{ fontSize:14,color:"#e5e7eb" \}\}>\'b7</span>;\
+    const rows = [];\
+    for (let i = 0; i < completed.length; i += 4) rows.push(completed.slice(i, i+4));\
+    return (\
+      <div style=\{\{ display:"flex",flexDirection:"column",alignItems:"center",gap:1 \}\}>\
+        \{rows.map((row, ri) => (\
+          <div key=\{ri\} style=\{\{ display:"flex",gap:1 \}\}>\
+            \{row.map((h) => \{\
+              const colorIdx = activeHabits.findIndex(a => a.id === h.id);\
+              return <span key=\{h.id\} style=\{\{ fontSize:10,color:HABIT_COLORS[colorIdx%HABIT_COLORS.length],lineHeight:1 \}\}>\uc0\u9733 </span>;\
+            \})\}\
+          </div>\
+        ))\}\
+      </div>\
+    );\
+  \};\
+\
+  const cells = [];\
+  for (let i=0;i<firstDay;i++) cells.push(null);\
+  for (let d=1;d<=daysInMonth;d++) cells.push(d);\
+\
+  return (\
+    <div>\
+      \{/* Month nav */\}\
+      <div style=\{\{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20 \}\}>\
+        <button onClick=\{prevMonth\} style=\{\{ background:"#fff",border:"1.5px solid #e5e7eb",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:16,color:"#374151" \}\}>\'8b</button>\
+        <span style=\{\{ fontWeight:800,fontSize:18,color:"#111827" \}\}>\{monthName\}</span>\
+        <button onClick=\{nextMonth\} style=\{\{ background:"#fff",border:"1.5px solid #e5e7eb",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:16,color:"#374151" \}\}>\'9b</button>\
+      </div>\
+\
+      \{/* Legend */\}\
+      <div style=\{\{ display:"flex",flexWrap:"wrap",gap:"6px 16px",marginBottom:16,padding:"10px 14px",background:"#f9fafb",borderRadius:10 \}\}>\
+        \{activeHabits.map((h,i) => (\
+          <div key=\{h.id\} style=\{\{ display:"flex",alignItems:"center",gap:5,fontSize:12 \}\}>\
+            <span style=\{\{ color:HABIT_COLORS[i%HABIT_COLORS.length],fontSize:14,lineHeight:1 \}\}>\uc0\u9733 </span>\
+            <span style=\{\{ color:"#374151" \}\}>\{h.name\}</span>\
+          </div>\
+        ))\}\
+      </div>\
+\
+      \{/* Day headers */\}\
+      <div style=\{\{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4 \}\}>\
+        \{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(\
+          <div key=\{d\} style=\{\{ textAlign:"center",fontSize:11,fontWeight:700,color:"#9ca3af",padding:"4px 0" \}\}>\{d\}</div>\
+        ))\}\
+      </div>\
+\
+      \{/* Calendar grid */\}\
+      <div style=\{\{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4 \}\}>\
+        \{cells.map((day,i) => \{\
+          if (!day) return <div key=\{`e$\{i\}`\}/>;\
+          const dk = dateKey(viewYear, viewMonth, day);\
+          const completed = completedFor(dk);\
+          const isToday = dk===today;\
+          const isFuture = dk>today;\
+          const perfect = completed.length===total && total>0;\
+          const bgColor = isFuture ? "#f9fafb" : perfect ? "#fefce8" : completed.length>0 ? "#f0fdf4" : "#fff";\
+\
+          return (\
+            <div key=\{dk\} style=\{\{ background:bgColor,borderRadius:10,border:isToday?"2px solid #6366f1":"1.5px solid #e5e7eb",minHeight:64,padding:"6px 4px 6px",display:"flex",flexDirection:"column",alignItems:"center",gap:4 \}\}>\
+              <span style=\{\{ fontSize:12,fontWeight:isToday?800:500,color:isToday?"#6366f1":"#374151" \}\}>\{day\}</span>\
+              \{!isFuture && <StarDots completed=\{completed\} perfect=\{perfect\} />\}\
+            </div>\
+          );\
+        \})\}\
+      </div>\
+\
+      \{/* Stats row */\}\
+      <div style=\{\{ marginTop:20,display:"flex",gap:12,flexWrap:"wrap" \}\}>\
+        \{(() => \{\
+          let perfectDays=0, activeDays=0;\
+          for (let d=1;d<=daysInMonth;d++) \{\
+            const dk=dateKey(viewYear,viewMonth,d);\
+            if(dk>today) continue;\
+            const c=completedFor(dk).length;\
+            if(c===total&&total>0) perfectDays++;\
+            if(c>0) activeDays++;\
+          \}\
+          return (\
+            <>\
+              <div style=\{\{ background:"#fefce8",borderRadius:10,padding:"10px 16px",flex:1,textAlign:"center" \}\}>\
+                <div style=\{\{ fontSize:22,fontWeight:800,color:"#d97706" \}\}>\{perfectDays\}</div>\
+                <div style=\{\{ fontSize:12,color:"#92400e" \}\}>Perfect Days</div>\
+              </div>\
+              <div style=\{\{ background:"#f0fdf4",borderRadius:10,padding:"10px 16px",flex:1,textAlign:"center" \}\}>\
+                <div style=\{\{ fontSize:22,fontWeight:800,color:"#16a34a" \}\}>\{activeDays\}</div>\
+                <div style=\{\{ fontSize:12,color:"#166534" \}\}>Active Days</div>\
+              </div>\
+              <div style=\{\{ background:"#eff6ff",borderRadius:10,padding:"10px 16px",flex:1,textAlign:"center" \}\}>\
+                <div style=\{\{ fontSize:22,fontWeight:800,color:"#2563eb" \}\}>\{total\}</div>\
+                <div style=\{\{ fontSize:12,color:"#1e40af" \}\}>Habits Tracked</div>\
+              </div>\
+            </>\
+          );\
+        \})()\}\
+      </div>\
+    </div>\
+  );\
+\}\
+\
+// --- Main App ---\
+export default function HabitTracker() \{\
+  const [habits, setHabits] = useState(null);\
+  const [startDate, setStartDate] = useState(null);\
+  const [newName, setNewName] = useState("");\
+  const [loading, setLoading] = useState(true);\
+  const [editingId, setEditingId] = useState(null);\
+  const [editName, setEditName] = useState("");\
+  const [showArchive, setShowArchive] = useState(false);\
+  const [tab, setTab] = useState("today");\
+\
+  useEffect(() => \{\
+    (async () => \{\
+      try \{\
+        const r = await window.storage.get("habits-v1");\
+        if (r) \{\
+          const parsed = JSON.parse(r.value);\
+          setHabits(parsed.habits ? parsed.habits.map(h=>(\{archived:false,...h\})) : parsed.map(h=>(\{archived:false,...h\})));\
+          setStartDate(parsed.startDate || todayStr());\
+        \} else \{\
+          setHabits(DEFAULT_HABITS);\
+          setStartDate(todayStr());\
+        \}\
+      \} catch \{ setHabits(DEFAULT_HABITS); setStartDate(todayStr()); \}\
+      setLoading(false);\
+    \})();\
+  \}, []);\
+\
+  const save = async (updated) => \{\
+    setHabits(updated);\
+    try \{ await window.storage.set("habits-v1", JSON.stringify(\{ habits: updated, startDate \})); \} catch \{\}\
+  \};\
+\
+  const toggle = (id) => \{\
+    const t = todayStr();\
+    save(habits.map(h => h.id !== id ? h : \{\
+      ...h, completions: h.completions.includes(t) ? h.completions.filter(d=>d!==t) : [...h.completions, t]\
+    \}));\
+  \};\
+\
+  const addHabit = () => \{\
+    if (!newName.trim()) return;\
+    save([...habits, \{ id: Date.now().toString(), name: newName.trim(), completions:[], archived:false \}]);\
+    setNewName("");\
+  \};\
+\
+  const confirmEdit = () => \{\
+    if (!editName.trim()) return;\
+    save(habits.map(h => h.id === editingId ? \{ ...h, name: editName.trim() \} : h));\
+    setEditingId(null);\
+  \};\
+\
+  if (loading) return (\
+    <div style=\{\{ display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:"#6b7280" \}\}>\
+      Loading your habits\'85\
+    </div>\
+  );\
+\
+  const days = getWeekDays();\
+  const t = todayStr();\
+  const active = habits.filter(h => !h.archived);\
+  const archived = habits.filter(h => h.archived);\
+  const totalDone = active.filter(h => h.completions.includes(t)).length;\
+\
+  const renderCard = (habit, isArchived=false) => \{\
+    const doneToday = habit.completions.includes(t);\
+    let streak = 0;\
+    const allDays = getWeekDays();\
+    for (let i = allDays.length - 1; i >= 0; i--) \{ if (habit.completions.includes(allDays[i])) streak++; else break; \}\
+\
+    const chartData = days.map(d => (\{\
+      date: `$\{dayName(d)\} $\{fmt(d)\}`,\
+      done: habit.completions.includes(d) ? 1 : 0,\
+      future: d > t,\
+      preStart: startDate && d < startDate,\
+    \}));\
+    const trackingDays = days.filter(d => d <= t && (!startDate || d >= startDate));\
+    const totalCompleted = habit.completions.filter(d => trackingDays.includes(d)).length;\
+\
+    return (\
+      <div key=\{habit.id\} style=\{\{ background:isArchived?"#f9fafb":"#fff",borderRadius:14,padding:"18px 20px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",borderLeft:`4px solid $\{isArchived?"#d1d5db":doneToday?"#22c55e":"#e5e7eb"\}`,opacity:isArchived?0.85:1 \}\}>\
+        <div style=\{\{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14 \}\}>\
+          <div style=\{\{ flex:1 \}\}>\
+            \{editingId===habit.id ? (\
+              <div style=\{\{ display:"flex",gap:6,alignItems:"center" \}\}>\
+                <input autoFocus value=\{editName\} onChange=\{e=>setEditName(e.target.value)\} onKeyDown=\{e=>\{if(e.key==="Enter")confirmEdit();if(e.key==="Escape")setEditingId(null);\}\} style=\{\{ fontSize:15,fontWeight:700,padding:"3px 8px",borderRadius:7,border:"1.5px solid #6366f1",outline:"none",color:"#111827",width:210 \}\} />\
+                <button onClick=\{confirmEdit\} style=\{\{ background:"#6366f1",color:"#fff",border:"none",borderRadius:6,padding:"4px 10px",fontWeight:700,cursor:"pointer",fontSize:13 \}\}>Save</button>\
+                <button onClick=\{()=>setEditingId(null)\} style=\{\{ background:"#f3f4f6",color:"#374151",border:"none",borderRadius:6,padding:"4px 10px",fontWeight:600,cursor:"pointer",fontSize:13 \}\}>Cancel</button>\
+              </div>\
+            ) : (\
+              <div style=\{\{ fontWeight:700,fontSize:16,color:isArchived?"#6b7280":"#111827" \}\}>\{habit.name\}</div>\
+            )\}\
+            <div style=\{\{ display:"flex",gap:12,marginTop:4 \}\}>\
+              <span style=\{\{ fontSize:12,color:streak>0?"#f59e0b":"#9ca3af" \}\}>\{streak>0?`\uc0\u55357 \u56613  $\{streak\}-day streak`:"No streak yet"\}</span>\
+              <span style=\{\{ fontSize:12,color:"#9ca3af" \}\}>\{totalCompleted\}/\{trackingDays.length\} this week</span>\
+              \{isArchived && <span style=\{\{ fontSize:11,color:"#9ca3af",background:"#f3f4f6",padding:"1px 8px",borderRadius:10 \}\}>Archived</span>\}\
+            </div>\
+          </div>\
+          <div style=\{\{ display:"flex",gap:8,alignItems:"center",marginLeft:10 \}\}>\
+            \{!isArchived && (\
+              <button onClick=\{()=>toggle(habit.id)\} style=\{\{ padding:"7px 14px",borderRadius:8,border:"none",cursor:"pointer",fontWeight:600,fontSize:13,background:doneToday?"#22c55e":"#f3f4f6",color:doneToday?"#fff":"#374151" \}\}>\
+                \{doneToday?"\uc0\u10003  Done":"Mark Done"\}\
+              </button>\
+            )\}\
+            <KebabMenu isArchived=\{isArchived\}\
+              onRename=\{()=>\{setEditingId(habit.id);setEditName(habit.name);\}\}\
+              onArchive=\{()=>save(habits.map(h=>h.id!==habit.id?h:\{...h,archived:true\}))\}\
+              onUnarchive=\{()=>save(habits.map(h=>h.id!==habit.id?h:\{...h,archived:false\}))\}\
+              onDelete=\{()=>save(habits.filter(h=>h.id!==habit.id))\}\
+            />\
+          </div>\
+        </div>\
+        <ResponsiveContainer width="100%" height=\{70\}>\
+          <BarChart data=\{chartData\} barCategoryGap="18%" margin=\{\{ top:2,right:0,left:0,bottom:0 \}\}>\
+            <XAxis dataKey="date" tick=\{\{ fontSize:8, fill:"#9ca3af" \}\} axisLine=\{false\} tickLine=\{false\} interval=\{0\} height=\{28\} />\
+            <YAxis hide domain=\{[0,1]\} />\
+            <Tooltip content=\{<CustomTooltip />\} cursor=\{false\} />\
+            <Bar dataKey="done" radius=\{[4,4,2,2]\}>\
+              \{chartData.map((e,i)=><Cell key=\{i\} fill=\{e.future||e.preStart ? "#f3f4f6" : e.done ? "#22c55e" : "#e5e7eb"\} />)\}\
+            </Bar>\
+          </BarChart>\
+        </ResponsiveContainer>\
+      </div>\
+    );\
+  \};\
+\
+  const tabBtn = (id, label) => (\
+    <button onClick=\{()=>setTab(id)\} style=\{\{ flex:1,padding:"10px 0",border:"none",cursor:"pointer",fontWeight:700,fontSize:15,borderRadius:10,background:tab===id?"#6366f1":"transparent",color:tab===id?"#fff":"#6b7280",transition:"all 0.15s" \}\}>\
+      \{label\}\
+    </button>\
+  );\
+\
+  return (\
+    <div style=\{\{ fontFamily:"system-ui,-apple-system,sans-serif",background:"#f3f4f6",minHeight:"100vh",padding:"24px 16px" \}\}>\
+      <style>\{`\
+        @keyframes shoot \{\
+          0%   \{ transform: translate(-6px, 6px) scale(0.7); opacity: 0; \}\
+          30%  \{ opacity: 1; \}\
+          70%  \{ transform: translate(3px, -3px) scale(1.15); opacity: 1; \}\
+          100% \{ transform: translate(0, 0) scale(1); opacity: 1; \}\
+        \}\
+        @keyframes pulse-glow \{\
+          0%, 100% \{ filter: drop-shadow(0 0 3px #fbbf24); transform: scale(1); \}\
+          50%       \{ filter: drop-shadow(0 0 8px #f59e0b); transform: scale(1.18); \}\
+        \}\
+        .shooting-star \{\
+          font-size: 26px;\
+          display: inline-block;\
+          animation: shoot 0.5s ease-out forwards, pulse-glow 2s ease-in-out 0.5s infinite;\
+        \}\
+      `\}</style>\
+      <div style=\{\{ maxWidth:700,margin:"0 auto" \}\}>\
+\
+        <div style=\{\{ marginBottom:20 \}\}>\
+          <h1 style=\{\{ fontSize:26,fontWeight:800,color:"#111827",margin:0 \}\}>My Daily Habits</h1>\
+          <p style=\{\{ color:"#6b7280",marginTop:4,fontSize:14 \}\}>\
+            \{new Date().toLocaleDateString("en-US",\{weekday:"long",month:"long",day:"numeric"\})\}\
+          </p>\
+        </div>\
+\
+        \{/* Tabs */\}\
+        <div style=\{\{ display:"flex",gap:4,background:"#e5e7eb",borderRadius:12,padding:4,marginBottom:24 \}\}>\
+          \{tabBtn("today","\uc0\u55357 \u56523  Today")\}\
+          \{tabBtn("calendar","\uc0\u55357 \u56517  Calendar")\}\
+        </div>\
+\
+        \{tab==="today" && (\
+          <>\
+            <div style=\{\{ marginBottom:20 \}\}>\
+              <div style=\{\{ display:"inline-block",background:"#fff",borderRadius:10,padding:"8px 16px",boxShadow:"0 1px 3px rgba(0,0,0,0.08)",fontSize:14,fontWeight:600,color:totalDone===active.length&&active.length>0?"#16a34a":"#374151" \}\}>\
+                \{totalDone===active.length&&active.length>0?"\uc0\u55356 \u57225 ":"\u55357 \u56523 "\} \{totalDone\} / \{active.length\} done today\
+              </div>\
+            </div>\
+\
+            \{active.map(h=>renderCard(h,false))\}\
+\
+            <div style=\{\{ background:"#fff",borderRadius:14,padding:"18px 20px",marginBottom:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)" \}\}>\
+              <div style=\{\{ fontWeight:700,fontSize:15,color:"#374151",marginBottom:12 \}\}>Add a New Habit</div>\
+              <div style=\{\{ display:"flex",gap:10 \}\}>\
+                <input value=\{newName\} onChange=\{e=>setNewName(e.target.value)\} onKeyDown=\{e=>e.key==="Enter"&&addHabit()\} placeholder="e.g. Drink 8 glasses of water" style=\{\{ flex:1,padding:"10px 14px",borderRadius:9,border:"1.5px solid #e5e7eb",fontSize:14,outline:"none",color:"#111827" \}\} />\
+                <button onClick=\{addHabit\} style=\{\{ padding:"10px 22px",borderRadius:9,border:"none",background:"#6366f1",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer" \}\}>Add</button>\
+              </div>\
+            </div>\
+\
+            \{archived.length>0 && (\
+              <div>\
+                <button onClick=\{()=>setShowArchive(v=>!v)\} style=\{\{ display:"flex",alignItems:"center",gap:8,background:"none",border:"1.5px solid #e5e7eb",borderRadius:10,padding:"10px 16px",cursor:"pointer",color:"#6b7280",fontWeight:600,fontSize:14,marginBottom:14,width:"100%" \}\}>\
+                  <span>\uc0\u55357 \u56772 \u65039  Archived Habits (\{archived.length\})</span>\
+                  <span style=\{\{ marginLeft:"auto" \}\}>\{showArchive?"\uc0\u9650 ":"\u9660 "\}</span>\
+                </button>\
+                \{showArchive && archived.map(h=>renderCard(h,true))\}\
+              </div>\
+            )\}\
+          </>\
+        )\}\
+\
+        \{tab==="calendar" && (\
+          <div style=\{\{ background:"#fff",borderRadius:14,padding:"20px",boxShadow:"0 1px 4px rgba(0,0,0,0.07)" \}\}>\
+            <CalendarView habits=\{habits\} />\
+          </div>\
+        )\}\
+\
+        <p style=\{\{ textAlign:"center",fontSize:11,color:"#d1d5db",marginTop:16 \}\}>Data saved automatically between sessions.</p>\
+      </div>\
+    </div>\
+  );\
+\}}
